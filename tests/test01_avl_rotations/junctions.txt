@@ -1,0 +1,3 @@
+30|North|PLAIN
+20|Central|HOSPITAL
+10|South|FIRE

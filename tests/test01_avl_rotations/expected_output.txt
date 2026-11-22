@@ -1,0 +1,19 @@
+LOAD junctions.txt: 3 accepted, 0 rejected
+LOAD incidents.txt: 0 accepted, 0 rejected
+> CITY_PREORDER
+JUNCTION PREORDER 20 10 30
+> CITY_LIST
+JUNCTIONS 3
+JUNCTION 10 South FIRE
+JUNCTION 20 Central HOSPITAL
+JUNCTION 30 North PLAIN
+> CITY_FIND 20
+JUNCTION 20 Central HOSPITAL
+> CITY_FIND 99
+ERROR line 4: junction 99 not found
+> CITY_ADD 20 Duplicate PLAIN
+ERROR line 5: duplicate junction ID
+> CITY_ADD 40 East POLICE
+JUNCTION ADDED 40
+> CITY_PREORDER
+JUNCTION PREORDER 20 10 30 40
