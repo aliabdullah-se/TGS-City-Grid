@@ -247,6 +247,7 @@ bool CityGrid::run(
     loadJunctions(junctionFile, junctionPath);
     loadIncidents(incidentFile, incidentPath);
 
-    // Increment 7 will execute script commands here.
+    executeScript(scriptFile);
     return true;
 }
+

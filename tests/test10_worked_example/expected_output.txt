@@ -1,0 +1,38 @@
+LOAD junctions.txt: 3 accepted, 0 rejected
+ERROR incidents.txt:4: junction 9 not found
+LOAD incidents.txt: 3 accepted, 1 rejected
+> CITY_FIND 2
+JUNCTION 2 CityHospital HOSPITAL
+> CITY_PREORDER
+JUNCTION PREORDER 2 1 3
+> INC_FIND 101
+INCIDENT 101 junction=1 category=MEDICAL severity=5 time=1000 status=REPORTED
+> REQUEST 101
+INCIDENT PENDING 101
+> REQUEST 102
+INCIDENT PENDING 102
+> REQUEST 103
+INCIDENT PENDING 103
+> REQUEST 101
+ERROR line 8: incident 101 is already PENDING
+> PRIORITY_NEXT
+INCIDENT 103 junction=2 category=MEDICAL severity=5 time=900 status=PENDING
+> PRIORITY_COUNT
+PENDING 3
+> INC_CLOSE 103
+INCIDENT CLOSED 103
+> INC_FIND 103
+ERROR line 12: incident 103 not found
+> PRIORITY_NEXT
+INCIDENT 101 junction=1 category=MEDICAL severity=5 time=1000 status=PENDING
+> PRIORITY_SERVE
+INCIDENT SERVED 101
+> PRIORITY_COUNT
+PENDING 1
+> DISPATCH 5
+ERROR line 16: unknown command DISPATCH
+> INC_LIST
+INCIDENTS 1
+INCIDENT 102 junction=1 category=FIRE severity=3 time=1005 status=PENDING
+> HASH_STATS
+HASH capacity=11 size=1
