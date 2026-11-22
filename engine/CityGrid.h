@@ -41,4 +41,3 @@ public:
              const std::string& incidentPath,
              const std::string& scriptPath);
 };
-

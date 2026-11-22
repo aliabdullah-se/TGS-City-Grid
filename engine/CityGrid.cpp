@@ -250,4 +250,3 @@ bool CityGrid::run(
     executeScript(scriptFile);
     return true;
 }
-
