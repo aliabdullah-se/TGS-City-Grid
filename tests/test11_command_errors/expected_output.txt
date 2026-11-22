@@ -1,0 +1,61 @@
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 1 accepted, 0 rejected
+> BLAH 1
+ERROR line 1: unknown command BLAH
+> CITY_FIND
+ERROR line 2: wrong argument count
+> CITY_ADD xyz Good PLAIN
+ERROR line 3: invalid junction ID
+> CITY_ADD 2 Bad|Name PLAIN
+ERROR line 4: invalid name
+> CITY_ADD 2 Good BAD
+ERROR line 5: invalid type
+> CITY_ADD 1 Dup PLAIN
+ERROR line 6: duplicate junction ID
+> CIERROR line 7: junction 999 not found
+> INC_REPORT abc 1 MEDICAL 2 50
+ERROR line 8: invalid incident ID
+> INC_REPORT 102 xyz MEDICAL 2 50
+ERROR line 9: invalid junction ID
+> INC_REPORT 102 1 UNKNOWN 2 50
+ERROR line 10: invalid category
+> INC_REPORT 102 1 FIRE 7 50
+ERROR line 11: invalid severity
+> INC_REPORT 102 1 FIRE 2 bad
+ERROR line 12: invalid timestamp
+> INC_REPORT 101 9 FIRE 2 20
+ERROR line 13: duplicate incident ID
+> INC_REPORT 102 9 FIRE 2 20
+ERROR line 14: junction 9 not found
+> INC_FIND 999
+ERROR line 15: incident 999 not found
+> INC_CLOSE 999
+ERROR line 16: incident 999 not found
+> REQUEST 999
+ERROR line 17: incident 999 not found
+> REQUEST 101
+INCIDENT PENDING 101
+> REQUEST 101
+ERROR line 19: incident 101 is already PENDING
+> CITY_ADD 3 New DEPOT
+JUNCTION ADDED 3
+> CITY_FIND 3
+JUNCTION 3 New DEPOT
+> INC_REPORT 102 3 FIRE 4 30
+INCIDENT REPORTED 102
+> INC_FIND 102
+INCIDENT 102 junction=3 category=FIRE severity=4 time=30 status=REPORTED
+> INC_CLOSE 101
+INCIDENT CLOSED 101
+> INC_FIND 101
+ERROR line 25: incident 101 not found
+> INC_CLOSE 102
+INCIDENT CLOSED 102
+> HASH_STATS
+HASH capacity=11 size=0
+> PRIORITY_COUNT
+PENDING 0
+> PRIORITY_NEXT
+NO PENDING INCIDENTS
+> INC_PREORDER
+INCIDENT PREORDER EMPTY
