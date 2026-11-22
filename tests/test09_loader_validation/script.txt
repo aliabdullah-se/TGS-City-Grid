@@ -1,0 +1,2 @@
+# Loader validation test
+# Commands intentionally not required here

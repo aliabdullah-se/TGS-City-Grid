@@ -1,0 +1,14 @@
+1|Central Square|PLAIN
+2|City Hospital|HOSPITAL
+3|FireHall|FIRE
+1|Duplicate|PLAIN
+abc|Broken|PLAIN
+4||PLAIN
+5|Unknown|LIBRARY
+6|Broken
+   
+7|Policy HQ|POLICE
+8|Depot|DEPOT
+0|Zero|PLAIN
+9|Spaced Name|PLAIN|extra
+0000000001|TooLong|PLAIN

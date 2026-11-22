@@ -1,0 +1,19 @@
+ERROR junctions.txt:4: duplicate junction ID
+ERROR junctions.txt:5: invalid junction ID
+ERROR junctions.txt:6: empty name
+ERROR junctions.txt:7: invalid type
+ERROR junctions.txt:8: wrong field count
+ERROR junctions.txt:12: invalid junction ID
+ERROR junctions.txt:13: wrong field count
+ERROR junctions.txt:14: invalid junction ID
+LOAD junctions.txt: 5 accepted, 8 rejected
+ERROR incidents.txt:3: duplicate incident ID
+ERROR incidents.txt:4: invalid incident ID
+ERROR incidents.txt:5: invalid junction ID
+ERROR incidents.txt:6: invalid category
+ERROR incidents.txt:7: invalid severity
+ERROR incidents.txt:8: invalid timestamp
+ERROR incidents.txt:9: junction 9 not found
+ERROR incidents.txt:10: wrong field count
+ERROR incidents.txt:11: invalid timestamp
+LOAD incidents.txt: 4 accepted, 9 rejected
