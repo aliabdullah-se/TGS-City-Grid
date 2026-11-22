@@ -1,0 +1,21 @@
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 8 accepted, 0 rejected
+> INC_PREORDER
+INCIDENT PREORDER 40 20 10 30 25 60 50 70
+> INC_CLOSE 10
+INCIDENT CLOSED 10
+> INC_CLOSE 30
+INCIDENT CLOSED 30
+> INC_CLOSE 40
+INCIDENT CLOSED 40
+> INC_PREORDER
+INCIDENT PREORDER 50 20 25 60 70
+> INC_LIST
+INCIDENTS 5
+INCIDENT 20 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 25 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 50 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 60 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 70 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+> INC_FIND 40
+ERROR line 7: incident 40 not found
