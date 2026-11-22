@@ -1,0 +1,2414 @@
+================================================================================
+START OF FOLDER: TGS-City-Grid
+================================================================================
+
+================================================================================
+PROJECT STRUCTURE
+================================================================================
+Root: D:\Github-Repositories\TGS-City-Grid
+
+TGS-City-Grid/
+├── .git/  [skipped]
+├── core/
+│   ├── Incident.h
+│   └── Junction.h
+├── engine/
+│   ├── CityGrid.cpp
+│   ├── CityGrid.h
+│   ├── CityGridCommands.cpp
+│   └── main.cpp
+├── index/
+│   ├── .gitkeep
+│   ├── AVL.h
+│   ├── BST.h
+│   ├── HashMap.h
+│   └── MaxHeap.h
+├── tests/
+│   ├── test01_avl_rotations/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test02_avl_balancing/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test03_bst_deletion/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test04_bst_empty_root/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test05_hash_collision/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test06_hash_resize/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test07_heap_priority/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test08_heap_edge_cases/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test09_loader_validation/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test10_worked_example/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   ├── test11_command_errors/
+│   │   ├── expected_output.txt
+│   │   ├── incidents.txt
+│   │   ├── junctions.txt
+│   │   └── script.txt
+│   └── .gitkeep
+├── .gitignore
+├── citygrid.exe
+├── LICENSE
+└── README.md
+
+Total files: 60
+
+================================================================================
+FILE CONTENTS
+================================================================================
+
+--------------------------------------------------------------------------------
+FILE: /core/Incident.h
+--------------------------------------------------------------------------------
+#pragma once
+#include <string>
+
+struct Incident {
+    int id = 0;
+    int junctionId = 0;
+    std::string category;
+    int severity = 0;
+    int timestamp = 0;
+    std::string status = "REPORTED";
+};
+
+inline bool higherPriority(const Incident* a, const Incident* b) {
+    if (a->severity != b->severity)
+        return a->severity > b->severity;
+
+    if (a->timestamp != b->timestamp)
+        return a->timestamp < b->timestamp;
+
+    return a->id < b->id;
+}
+
+
+--------------------------------------------------------------------------------
+FILE: /core/Junction.h
+--------------------------------------------------------------------------------
+#pragma once
+#include <string>
+
+struct Junction {
+    int id = 0;
+    std::string name;
+    std::string type;
+};
+
+
+--------------------------------------------------------------------------------
+FILE: /engine/CityGrid.cpp
+--------------------------------------------------------------------------------
+#include "CityGrid.h"
+#include <iostream>
+
+std::string CityGrid::trim(const std::string& text) {
+    std::string::size_type first =
+        text.find_first_not_of(" \t");
+
+    if (first == std::string::npos)
+        return "";
+
+    std::string::size_type last =
+        text.find_last_not_of(" \t");
+
+    return text.substr(first, last - first + 1);
+}
+
+bool CityGrid::blank(const std::string& text) {
+    return trim(text).empty();
+}
+
+bool CityGrid::fields(const std::string& line, int needed,
+                      std::string result[]) {
+    std::string::size_type start = 0;
+    int count = 0;
+
+    for (std::string::size_type i = 0;
+         i <= line.size(); ++i) {
+
+        if (i == line.size() || line[i] == '|') {
+            if (count >= needed)
+                return false;
+
+            result[count++] =
+                trim(line.substr(start, i - start));
+
+            start = i + 1;
+        }
+    }
+
+    return count == needed;
+}
+
+bool CityGrid::number(const std::string& text,
+                      int minimum, int maximum,
+                      int& result) {
+    if (text.empty() || text.size() > 9)
+        return false;
+
+    int value = 0;
+
+    for (std::string::size_type i = 0;
+         i < text.size(); ++i) {
+
+        if (text[i] < '0' || text[i] > '9')
+            return false;
+
+        value = value * 10 + (text[i] - '0');
+    }
+
+    if (value < minimum || value > maximum)
+        return false;
+
+    result = value;
+    return true;
+}
+
+bool CityGrid::junctionType(const std::string& text) {
+    return text == "HOSPITAL" ||
+           text == "FIRE" ||
+           text == "POLICE" ||
+           text == "DEPOT" ||
+           text == "PLAIN";
+}
+
+bool CityGrid::incidentCategory(const std::string& text) {
+    return text == "MEDICAL" ||
+           text == "FIRE" ||
+           text == "CRIME";
+}
+
+void CityGrid::loadJunctions(
+    std::ifstream& input,
+    const std::string& filename) {
+
+    std::string line;
+    int lineNumber = 0;
+    int accepted = 0;
+    int rejected = 0;
+
+    while (std::getline(input, line)) {
+        ++lineNumber;
+
+        // Remove Windows carriage return.
+        if (!line.empty() &&
+            line[line.size() - 1] == '\r')
+            line.erase(line.size() - 1);
+
+        if (blank(line))
+            continue;
+
+        std::string part[3];
+        int id = 0;
+        std::string reason;
+
+        if (!fields(line, 3, part))
+            reason = "wrong field count";
+        else if (!number(part[0], 1, 999999999, id))
+            reason = "invalid junction ID";
+        else if (part[1].empty())
+            reason = "empty name";
+        else if (!junctionType(part[2]))
+            reason = "invalid type";
+        else if (junctions.find(id) != nullptr)
+            reason = "duplicate junction ID";
+
+        if (!reason.empty()) {
+            std::cout << "ERROR " << filename
+                      << ':' << lineNumber
+                      << ": " << reason << '\n';
+
+            ++rejected;
+            continue;
+        }
+
+        Junction junction;
+        junction.id = id;
+        junction.name = part[1];
+        junction.type = part[2];
+
+        junctions.insert(id, junction);
+        ++accepted;
+    }
+
+    std::cout << "LOAD " << filename << ": "
+              << accepted << " accepted, "
+              << rejected << " rejected\n";
+}
+
+void CityGrid::loadIncidents(
+    std::ifstream& input,
+    const std::string& filename) {
+
+    std::string line;
+    int lineNumber = 0;
+    int accepted = 0;
+    int rejected = 0;
+
+    while (std::getline(input, line)) {
+        ++lineNumber;
+
+        if (!line.empty() &&
+            line[line.size() - 1] == '\r')
+            line.erase(line.size() - 1);
+
+        if (blank(line))
+            continue;
+
+        std::string part[5];
+        int id = 0;
+        int junctionId = 0;
+        int severity = 0;
+        int timestamp = 0;
+        std::string reason;
+
+        if (!fields(line, 5, part))
+            reason = "wrong field count";
+        else if (!number(part[0], 1, 999999999, id))
+            reason = "invalid incident ID";
+        else if (!number(part[1], 1, 999999999,
+                         junctionId))
+            reason = "invalid junction ID";
+        else if (!incidentCategory(part[2]))
+            reason = "invalid category";
+        else if (!number(part[3], 1, 5, severity))
+            reason = "invalid severity";
+        else if (!number(part[4], 0, 999999999,
+                         timestamp))
+            reason = "invalid timestamp";
+        else if (incidentIndex.find(id) != nullptr)
+            reason = "duplicate incident ID";
+        else if (junctions.find(junctionId) == nullptr)
+            reason = "junction " +
+                     std::to_string(junctionId) +
+                     " not found";
+
+        if (!reason.empty()) {
+            std::cout << "ERROR " << filename
+                      << ':' << lineNumber
+                      << ": " << reason << '\n';
+
+            ++rejected;
+            continue;
+        }
+
+        Incident* incident = new Incident;
+
+        incident->id = id;
+        incident->junctionId = junctionId;
+        incident->category = part[2];
+        incident->severity = severity;
+        incident->timestamp = timestamp;
+        incident->status = "REPORTED";
+
+        // BST owns the Incident object.
+        incidents.insert(id, incident);
+
+        // HashMap stores the same pointer.
+        incidentIndex.insert(id, incident);
+
+        ++accepted;
+    }
+
+    std::cout << "LOAD " << filename << ": "
+              << accepted << " accepted, "
+              << rejected << " rejected\n";
+}
+
+bool CityGrid::run(
+    const std::string& junctionPath,
+    const std::string& incidentPath,
+    const std::string& scriptPath) {
+
+    std::ifstream junctionFile(junctionPath);
+
+    if (!junctionFile) {
+        std::cout << "FATAL: cannot open "
+                  << junctionPath << '\n';
+        return false;
+    }
+
+    std::ifstream incidentFile(incidentPath);
+
+    if (!incidentFile) {
+        std::cout << "FATAL: cannot open "
+                  << incidentPath << '\n';
+        return false;
+    }
+
+    std::ifstream scriptFile(scriptPath);
+
+    if (!scriptFile) {
+        std::cout << "FATAL: cannot open "
+                  << scriptPath << '\n';
+        return false;
+    }
+
+    loadJunctions(junctionFile, junctionPath);
+    loadIncidents(incidentFile, incidentPath);
+
+    executeScript(scriptFile);
+    return true;
+}
+
+
+--------------------------------------------------------------------------------
+FILE: /engine/CityGrid.h
+--------------------------------------------------------------------------------
+#pragma once
+#include <string>
+#include <fstream>
+#include "Junction.h"
+#include "Incident.h"
+#include "AVL.h"
+#include "BST.h"
+#include "HashMap.h"
+#include "MaxHeap.h"
+
+class CityGrid {
+private:
+    AVL<int, Junction> junctions;
+    BST<int, Incident> incidents;
+    HashMap<int, Incident> incidentIndex;
+    MaxHeap<Incident*> pending;
+
+    static std::string trim(const std::string& text);
+    static bool blank(const std::string& text);
+    static bool fields(const std::string& line, int needed,
+                       std::string result[]);
+    static bool number(const std::string& text, int minimum,
+                       int maximum, int& result);
+    static bool junctionType(const std::string& text);
+    static bool incidentCategory(const std::string& text);
+
+    void loadJunctions(std::ifstream& input,
+                       const std::string& filename);
+    void loadIncidents(std::ifstream& input,
+                       const std::string& filename);
+
+    void executeScript(std::ifstream& input);
+    void executeCommand(const std::string& line,
+                        int lineNumber);
+
+    static void printJunction(const Junction& junction);
+    static void printIncident(const Incident& incident);
+    void closeIncident(int id);
+public:
+    bool run(const std::string& junctionPath,
+             const std::string& incidentPath,
+             const std::string& scriptPath);
+};
+
+
+--------------------------------------------------------------------------------
+FILE: /engine/CityGridCommands.cpp
+--------------------------------------------------------------------------------
+#include "CityGrid.h"
+#include <iostream>
+#include <sstream>
+
+void CityGrid::printJunction(const Junction& junction) {
+    std::cout << "JUNCTION " << junction.id << ' '
+              << junction.name << ' ' << junction.type << '\n';
+}
+
+void CityGrid::printIncident(const Incident& incident) {
+    std::cout << "INCIDENT " << incident.id
+              << " junction=" << incident.junctionId
+              << " category=" << incident.category
+              << " severity=" << incident.severity
+              << " time=" << incident.timestamp
+              << " status=" << incident.status << '\n';
+}
+
+void CityGrid::closeIncident(int id) {
+    Incident* incident = incidentIndex.find(id);
+
+    if (incident->status == "PENDING")
+        pending.removeById(id);
+
+    // Remove references before the BST frees the object.
+    incidentIndex.remove(id);
+    incidents.remove(id);
+}
+
+void CityGrid::executeScript(std::ifstream& script) {
+    std::string line;
+    int lineNumber = 0;
+
+    while (std::getline(script, line)) {
+        ++lineNumber;
+
+        if (!line.empty() && line[line.size() - 1] == '\r')
+            line.erase(line.size() - 1);
+
+        line = trim(line);
+
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        std::cout << "> " << line << '\n';
+        executeCommand(line, lineNumber);
+    }
+}
+
+void CityGrid::executeCommand(
+    const std::string& line, int lineNumber) {
+
+    std::istringstream input(line);
+    std::string word[6];
+    std::string token;
+    int wordCount = 0;
+
+    while (input >> token) {
+        if (wordCount < 6)
+            word[wordCount] = token;
+        ++wordCount;
+    }
+
+    const std::string& command = word[0];
+    int expected = -1;
+
+    if (command == "CITY_ADD")
+        expected = 3;
+    else if (command == "CITY_FIND")
+        expected = 1;
+    else if (command == "CITY_LIST" ||
+             command == "CITY_PREORDER")
+        expected = 0;
+    else if (command == "INC_REPORT")
+        expected = 5;
+    else if (command == "INC_FIND" ||
+             command == "INC_CLOSE" ||
+             command == "REQUEST")
+        expected = 1;
+    else if (command == "INC_LIST" ||
+             command == "INC_PREORDER" ||
+             command == "PRIORITY_NEXT" ||
+             command == "PRIORITY_SERVE" ||
+             command == "PRIORITY_COUNT" ||
+             command == "HASH_STATS")
+        expected = 0;
+
+    std::string reason;
+
+    if (expected < 0)
+        reason = "unknown command " + command;
+    else if (wordCount != expected + 1)
+        reason = "wrong argument count";
+
+    if (!reason.empty()) {
+        std::cout << "ERROR line " << lineNumber
+                  << ": " << reason << '\n';
+        return;
+    }
+
+    int id = 0;
+    int junctionId = 0;
+    int severity = 0;
+    int timestamp = 0;
+
+    if (command == "CITY_ADD") {
+
+        if (!number(word[1], 1, 999999999, id))
+            reason = "invalid junction ID";
+        else if (word[2].find('|') != std::string::npos)
+            reason = "invalid name";
+        else if (!junctionType(word[3]))
+            reason = "invalid type";
+        else if (junctions.find(id) != nullptr)
+            reason = "duplicate junction ID";
+
+        if (reason.empty()) {
+            Junction junction;
+            junction.id = id;
+            junction.name = word[2];
+            junction.type = word[3];
+
+            junctions.insert(id, junction);
+            std::cout << "JUNCTION ADDED " << id << '\n';
+        }
+
+    } else if (command == "CITY_FIND") {
+
+        if (!number(word[1], 1, 999999999, id)) {
+            reason = "invalid junction ID";
+        } else {
+            const Junction* junction = junctions.find(id);
+
+            if (junction == nullptr)
+                reason = "junction " + std::to_string(id)
+                         + " not found";
+            else
+                printJunction(*junction);
+        }
+
+    } else if (command == "CITY_LIST") {
+
+        std::cout << "JUNCTIONS " << junctions.size() << '\n';
+
+        junctions.inOrder(
+            [](const int&, const Junction& junction) {
+                printJunction(junction);
+            }
+        );
+
+    } else if (command == "CITY_PREORDER") {
+
+        std::cout << "JUNCTION PREORDER";
+
+        if (junctions.size() == 0) {
+            std::cout << " EMPTY";
+        } else {
+            junctions.preOrder(
+                [](const int& key, const Junction&) {
+                    std::cout << ' ' << key;
+                }
+            );
+        }
+
+        std::cout << '\n';
+
+    } else if (command == "INC_REPORT") {
+
+        if (!number(word[1], 1, 999999999, id))
+            reason = "invalid incident ID";
+        else if (!number(word[2], 1, 999999999,
+                         junctionId))
+            reason = "invalid junction ID";
+        else if (!incidentCategory(word[3]))
+            reason = "invalid category";
+        else if (!number(word[4], 1, 5, severity))
+            reason = "invalid severity";
+        else if (!number(word[5], 0, 999999999,
+                         timestamp))
+            reason = "invalid timestamp";
+        else if (incidentIndex.find(id) != nullptr)
+            reason = "duplicate incident ID";
+        else if (junctions.find(junctionId) == nullptr)
+            reason = "junction " + std::to_string(junctionId)
+                     + " not found";
+
+        if (reason.empty()) {
+            Incident* incident = new Incident;
+
+            incident->id = id;
+            incident->junctionId = junctionId;
+            incident->category = word[3];
+            incident->severity = severity;
+            incident->timestamp = timestamp;
+            incident->status = "REPORTED";
+
+            incidents.insert(id, incident);
+            incidentIndex.insert(id, incident);
+
+            std::cout << "INCIDENT REPORTED " << id << '\n';
+        }
+
+    } else if (command == "INC_FIND") {
+
+        if (!number(word[1], 1, 999999999, id)) {
+            reason = "invalid incident ID";
+        } else {
+            Incident* incident = incidentIndex.find(id);
+
+            if (incident == nullptr)
+                reason = "incident " + std::to_string(id)
+                         + " not found";
+            else
+                printIncident(*incident);
+        }
+
+    } else if (command == "INC_LIST") {
+
+        std::cout << "INCIDENTS " << incidents.size() << '\n';
+
+        incidents.inOrder(
+            [](const int&, Incident* incident) {
+                printIncident(*incident);
+            }
+        );
+
+    } else if (command == "INC_PREORDER") {
+
+        std::cout << "INCIDENT PREORDER";
+
+        if (incidents.size() == 0) {
+            std::cout << " EMPTY";
+        } else {
+            incidents.preOrder(
+                [](const int& key, Incident*) {
+                    std::cout << ' ' << key;
+                }
+            );
+        }
+
+        std::cout << '\n';
+
+    } else if (command == "INC_CLOSE" ||
+               command == "REQUEST") {
+
+        if (!number(word[1], 1, 999999999, id)) {
+            reason = "invalid incident ID";
+        } else {
+            Incident* incident = incidentIndex.find(id);
+
+            if (incident == nullptr) {
+                reason = "incident " + std::to_string(id)
+                         + " not found";
+            } else if (command == "INC_CLOSE") {
+                closeIncident(id);
+
+                std::cout << "INCIDENT CLOSED "
+                          << id << '\n';
+            } else if (incident->status == "PENDING") {
+                reason = "incident " + std::to_string(id)
+                         + " is already PENDING";
+            } else {
+                incident->status = "PENDING";
+                pending.insert(incident);
+
+                std::cout << "INCIDENT PENDING "
+                          << id << '\n';
+            }
+        }
+
+    } else if (command == "PRIORITY_NEXT") {
+
+        Incident* incident = pending.peek();
+
+        if (incident == nullptr)
+            std::cout << "NO PENDING INCIDENTS\n";
+        else
+            printIncident(*incident);
+
+    } else if (command == "PRIORITY_SERVE") {
+
+        Incident* incident = pending.extractMax();
+
+        if (incident == nullptr) {
+            std::cout << "NO PENDING INCIDENTS\n";
+        } else {
+            int servedId = incident->id;
+
+            incidentIndex.remove(servedId);
+            incidents.remove(servedId);
+
+            std::cout << "INCIDENT SERVED "
+                      << servedId << '\n';
+        }
+
+    } else if (command == "PRIORITY_COUNT") {
+
+        std::cout << "PENDING " << pending.size() << '\n';
+
+    } else if (command == "HASH_STATS") {
+
+        std::cout << "HASH capacity="
+                  << incidentIndex.capacity()
+                  << " size="
+                  << incidentIndex.size() << '\n';
+    }
+
+    if (!reason.empty()) {
+        std::cout << "ERROR line " << lineNumber
+                  << ": " << reason << '\n';
+    }
+}
+
+
+--------------------------------------------------------------------------------
+FILE: /engine/main.cpp
+--------------------------------------------------------------------------------
+#include <iostream>
+#include "CityGrid.h"
+
+int main(int argc, char* argv[]) {
+    if (argc != 4) {
+        std::cout
+            << "USAGE: citygrid <junctions file> <incidents file> <script file>\n";
+        return 1;
+    }
+
+    CityGrid app;
+
+    if (!app.run(argv[1], argv[2], argv[3]))
+        return 1;
+
+    return 0;
+}
+
+
+--------------------------------------------------------------------------------
+FILE: /index/.gitkeep
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /index/AVL.h
+--------------------------------------------------------------------------------
+#pragma once
+
+template <typename K, typename V>
+class AVL {
+private:
+    struct Node {
+        K key;
+        V value;
+        int height;
+        Node* left;
+        Node* right;
+
+        Node(const K& k, const V& v)
+            : key(k), value(v), height(1),
+              left(nullptr), right(nullptr) {}
+    };
+
+    Node* root;
+    int nodeCount;
+
+    static int nodeHeight(const Node* node) {
+        return node == nullptr ? 0 : node->height;
+    }
+
+    static void updateHeight(Node* node) {
+        int leftHeight = nodeHeight(node->left);
+        int rightHeight = nodeHeight(node->right);
+
+        node->height = 1 + (leftHeight > rightHeight
+                            ? leftHeight : rightHeight);
+    }
+
+    static int balanceFactor(const Node* node) {
+        return nodeHeight(node->left) - nodeHeight(node->right);
+    }
+
+    static Node* rotateRight(Node* y) {
+        Node* x = y->left;
+        Node* middle = x->right;
+
+        x->right = y;
+        y->left = middle;
+
+        updateHeight(y);
+        updateHeight(x);
+
+        return x;
+    }
+
+    static Node* rotateLeft(Node* x) {
+        Node* y = x->right;
+        Node* middle = y->left;
+
+        y->left = x;
+        x->right = middle;
+
+        updateHeight(x);
+        updateHeight(y);
+
+        return y;
+    }
+
+    Node* insertNode(Node* node, const K& key,
+                     const V& value, bool& inserted) {
+        if (node == nullptr) {
+            inserted = true;
+            ++nodeCount;
+            return new Node(key, value);
+        }
+
+        if (key < node->key)
+            node->left = insertNode(
+                node->left, key, value, inserted);
+        else if (key > node->key)
+            node->right = insertNode(
+                node->right, key, value, inserted);
+        else
+            return node;
+
+        updateHeight(node);
+        int balance = balanceFactor(node);
+
+        if (balance > 1) {
+            if (key > node->left->key)
+                node->left = rotateLeft(node->left);
+
+            return rotateRight(node);
+        }
+
+        if (balance < -1) {
+            if (key < node->right->key)
+                node->right = rotateRight(node->right);
+
+            return rotateLeft(node);
+        }
+
+        return node;
+    }
+
+    template <typename Visitor>
+    static void traverseInOrder(const Node* node,
+                                Visitor& visit) {
+        if (node == nullptr) return;
+
+        traverseInOrder(node->left, visit);
+        visit(node->key, node->value);
+        traverseInOrder(node->right, visit);
+    }
+
+    template <typename Visitor>
+    static void traversePreOrder(const Node* node,
+                                 Visitor& visit) {
+        if (node == nullptr) return;
+
+        visit(node->key, node->value);
+        traversePreOrder(node->left, visit);
+        traversePreOrder(node->right, visit);
+    }
+
+    static void destroy(Node* node) {
+        if (node == nullptr) return;
+
+        destroy(node->left);
+        destroy(node->right);
+        delete node;
+    }
+
+public:
+    AVL() : root(nullptr), nodeCount(0) {}
+
+    ~AVL() {
+        destroy(root);
+    }
+
+    AVL(const AVL&) = delete;
+    AVL& operator=(const AVL&) = delete;
+
+    bool insert(const K& key, const V& value) {
+        bool inserted = false;
+        root = insertNode(root, key, value, inserted);
+        return inserted;
+    }
+
+    const V* find(const K& key) const {
+        const Node* current = root;
+
+        while (current != nullptr) {
+            if (key == current->key)
+                return &current->value;
+
+            current = key < current->key
+                ? current->left : current->right;
+        }
+
+        return nullptr;
+    }
+
+    int size() const {
+        return nodeCount;
+    }
+
+    template <typename Visitor>
+    void inOrder(Visitor visit) const {
+        traverseInOrder(root, visit);
+    }
+
+    template <typename Visitor>
+    void preOrder(Visitor visit) const {
+        traversePreOrder(root, visit);
+    }
+};
+
+
+--------------------------------------------------------------------------------
+FILE: /index/BST.h
+--------------------------------------------------------------------------------
+#pragma once
+
+template <typename K, typename V>
+class BST {
+private:
+    struct Node {
+        K key;
+        V* value;
+        Node* left;
+        Node* right;
+
+        Node(const K& k, V* v)
+            : key(k), value(v),
+              left(nullptr), right(nullptr) {}
+    };
+
+    Node* root;
+    int nodeCount;
+
+    Node* insertNode(Node* node, const K& key,
+                     V* value, bool& inserted) {
+        if (node == nullptr) {
+            inserted = true;
+            ++nodeCount;
+            return new Node(key, value);
+        }
+
+        if (key < node->key)
+            node->left = insertNode(
+                node->left, key, value, inserted);
+        else if (key > node->key)
+            node->right = insertNode(
+                node->right, key, value, inserted);
+
+        return node;
+    }
+
+    static Node* detachMin(Node* node, Node*& smallest) {
+        if (node->left == nullptr) {
+            smallest = node;
+            Node* remaining = node->right;
+            node->right = nullptr;
+            return remaining;
+        }
+
+        node->left = detachMin(node->left, smallest);
+        return node;
+    }
+
+    Node* removeNode(Node* node, const K& key,
+                     bool& removed) {
+        if (node == nullptr)
+            return nullptr;
+
+        if (key < node->key) {
+            node->left = removeNode(
+                node->left, key, removed);
+            return node;
+        }
+
+        if (key > node->key) {
+            node->right = removeNode(
+                node->right, key, removed);
+            return node;
+        }
+
+        removed = true;
+        --nodeCount;
+
+        // Case 1 and 2: zero or one child.
+        if (node->left == nullptr ||
+            node->right == nullptr) {
+
+            Node* child = node->left != nullptr
+                        ? node->left : node->right;
+
+            delete node->value;
+            delete node;
+            return child;
+        }
+
+        // Case 3: two children.
+        Node* successor = nullptr;
+        node->right = detachMin(node->right, successor);
+
+        delete node->value;
+
+        // Move the successor pointer, not the Incident.
+        node->key = successor->key;
+        node->value = successor->value;
+
+        delete successor;
+        return node;
+    }
+
+    template <typename Visitor>
+    static void traverseInOrder(const Node* node,
+                                Visitor& visit) {
+        if (node == nullptr) return;
+
+        traverseInOrder(node->left, visit);
+        visit(node->key, node->value);
+        traverseInOrder(node->right, visit);
+    }
+
+    template <typename Visitor>
+    static void traversePreOrder(const Node* node,
+                                 Visitor& visit) {
+        if (node == nullptr) return;
+
+        visit(node->key, node->value);
+        traversePreOrder(node->left, visit);
+        traversePreOrder(node->right, visit);
+    }
+
+    static void destroy(Node* node) {
+        if (node == nullptr) return;
+
+        destroy(node->left);
+        destroy(node->right);
+
+        delete node->value;
+        delete node;
+    }
+
+public:
+    BST() : root(nullptr), nodeCount(0) {}
+
+    ~BST() {
+        destroy(root);
+    }
+
+    BST(const BST&) = delete;
+    BST& operator=(const BST&) = delete;
+
+    // Ownership transfers only on successful insertion.
+    bool insert(const K& key, V* value) {
+        bool inserted = false;
+        root = insertNode(root, key, value, inserted);
+        return inserted;
+    }
+
+    V* find(const K& key) const {
+        Node* current = root;
+
+        while (current != nullptr) {
+            if (key == current->key)
+                return current->value;
+
+            current = key < current->key
+                    ? current->left : current->right;
+        }
+
+        return nullptr;
+    }
+
+    bool remove(const K& key) {
+        bool removed = false;
+        root = removeNode(root, key, removed);
+        return removed;
+    }
+
+    int size() const {
+        return nodeCount;
+    }
+
+    template <typename Visitor>
+    void inOrder(Visitor visit) const {
+        traverseInOrder(root, visit);
+    }
+
+    template <typename Visitor>
+    void preOrder(Visitor visit) const {
+        traversePreOrder(root, visit);
+    }
+};
+
+
+--------------------------------------------------------------------------------
+FILE: /index/HashMap.h
+--------------------------------------------------------------------------------
+#pragma once
+
+template <typename K, typename V>
+class HashMap {
+private:
+    struct Node {
+        K key;
+        V* value;
+        Node* next;
+
+        Node(const K& k, V* v, Node* n)
+            : key(k), value(v), next(n) {}
+    };
+
+    Node** buckets;
+    int bucketCapacity;
+    int entryCount;
+
+    static int bucketIndex(const K& key, int cap) {
+        return static_cast<int>(key % cap);
+    }
+
+    static bool isPrime(int number) {
+        if (number < 2) return false;
+
+        for (int d = 2; d <= number / d; ++d) {
+            if (number % d == 0) return false;
+        }
+        return true;
+    }
+
+    static int nextPrime(int minimum) {
+        while (!isPrime(minimum))
+            ++minimum;
+
+        return minimum;
+    }
+
+    void resize() {
+        int newCapacity = nextPrime(bucketCapacity * 2);
+        Node** newBuckets = new Node*[newCapacity]();
+
+        for (int i = 0; i < bucketCapacity; ++i) {
+            Node* current = buckets[i];
+
+            while (current != nullptr) {
+                Node* next = current->next;
+                int index = bucketIndex(
+                    current->key, newCapacity);
+
+                current->next = newBuckets[index];
+                newBuckets[index] = current;
+                current = next;
+            }
+        }
+
+        delete[] buckets;
+        buckets = newBuckets;
+        bucketCapacity = newCapacity;
+    }
+
+public:
+    HashMap()
+        : buckets(new Node*[11]()),
+          bucketCapacity(11),
+          entryCount(0) {}
+
+    ~HashMap() {
+        for (int i = 0; i < bucketCapacity; ++i) {
+            Node* current = buckets[i];
+
+            while (current != nullptr) {
+                Node* next = current->next;
+                delete current;
+                current = next;
+            }
+        }
+
+        delete[] buckets;
+    }
+
+    HashMap(const HashMap&) = delete;
+    HashMap& operator=(const HashMap&) = delete;
+
+    bool insert(const K& key, V* value) {
+        int index = bucketIndex(key, bucketCapacity);
+        Node* current = buckets[index];
+
+        while (current != nullptr) {
+            if (current->key == key)
+                return false;
+
+            current = current->next;
+        }
+
+        buckets[index] = new Node(
+            key, value, buckets[index]);
+
+        ++entryCount;
+
+        // Resize only when load factor exceeds 0.75.
+        if (entryCount * 4 > bucketCapacity * 3)
+            resize();
+
+        return true;
+    }
+
+    V* find(const K& key) const {
+        int index = bucketIndex(key, bucketCapacity);
+        Node* current = buckets[index];
+
+        while (current != nullptr) {
+            if (current->key == key)
+                return current->value;
+
+            current = current->next;
+        }
+
+        return nullptr;
+    }
+
+    bool remove(const K& key) {
+        int index = bucketIndex(key, bucketCapacity);
+        Node* current = buckets[index];
+        Node* previous = nullptr;
+
+        while (current != nullptr) {
+            if (current->key == key) {
+                if (previous == nullptr)
+                    buckets[index] = current->next;
+                else
+                    previous->next = current->next;
+
+                // Delete the hash node, not the Incident.
+                delete current;
+                --entryCount;
+                return true;
+            }
+
+            previous = current;
+            current = current->next;
+        }
+
+        return false;
+    }
+
+    int capacity() const {
+        return bucketCapacity;
+    }
+
+    int size() const {
+        return entryCount;
+    }
+};
+
+
+--------------------------------------------------------------------------------
+FILE: /index/MaxHeap.h
+--------------------------------------------------------------------------------
+#pragma once
+#include "Incident.h"
+
+template <typename T>
+class MaxHeap {
+private:
+    T* items;
+    int itemCount;
+    int heapCapacity;
+
+    static bool higher(T first, T second) {
+        return higherPriority(first, second);
+    }
+
+    void exchange(int a, int b) {
+        T temp = items[a];
+        items[a] = items[b];
+        items[b] = temp;
+    }
+
+    void grow() {
+        int newCapacity = heapCapacity * 2;
+        T* replacement = new T[newCapacity];
+
+        for (int i = 0; i < itemCount; ++i)
+            replacement[i] = items[i];
+
+        delete[] items;
+        items = replacement;
+        heapCapacity = newCapacity;
+    }
+
+    void siftUp(int index) {
+        while (index > 0) {
+            int parent = (index - 1) / 2;
+
+            if (!higher(items[index], items[parent]))
+                break;
+
+            exchange(index, parent);
+            index = parent;
+        }
+    }
+
+    void siftDown(int index) {
+        while (true) {
+            int left = 2 * index + 1;
+            int right = 2 * index + 2;
+            int best = index;
+
+            if (left < itemCount &&
+                higher(items[left], items[best]))
+                best = left;
+
+            if (right < itemCount &&
+                higher(items[right], items[best]))
+                best = right;
+
+            if (best == index)
+                break;
+
+            exchange(index, best);
+            index = best;
+        }
+    }
+
+public:
+    MaxHeap()
+        : items(new T[16]),
+          itemCount(0),
+          heapCapacity(16) {}
+
+    ~MaxHeap() {
+        // Incident objects belong to the BST.
+        delete[] items;
+    }
+
+    MaxHeap(const MaxHeap&) = delete;
+    MaxHeap& operator=(const MaxHeap&) = delete;
+
+    void insert(T value) {
+        if (itemCount == heapCapacity)
+            grow();
+
+        items[itemCount] = value;
+        ++itemCount;
+
+        siftUp(itemCount - 1);
+    }
+
+    T peek() const {
+        if (itemCount == 0)
+            return nullptr;
+
+        return items[0];
+    }
+
+    T extractMax() {
+        if (itemCount == 0)
+            return nullptr;
+
+        T result = items[0];
+        --itemCount;
+
+        if (itemCount > 0) {
+            items[0] = items[itemCount];
+            siftDown(0);
+        }
+
+        items[itemCount] = nullptr;
+        return result;
+    }
+
+    bool removeById(int id) {
+        int index = -1;
+
+        // Assignment requires linear search.
+        for (int i = 0; i < itemCount; ++i) {
+            if (items[i]->id == id) {
+                index = i;
+                break;
+            }
+        }
+
+        if (index == -1)
+            return false;
+
+        --itemCount;
+
+        if (index != itemCount) {
+            items[index] = items[itemCount];
+            items[itemCount] = nullptr;
+
+            if (index > 0 &&
+                higher(items[index],
+                       items[(index - 1) / 2])) {
+                siftUp(index);
+            } else {
+                siftDown(index);
+            }
+        } else {
+            items[itemCount] = nullptr;
+        }
+
+        return true;
+    }
+
+    int size() const {
+        return itemCount;
+    }
+
+    int capacity() const {
+        return heapCapacity;
+    }
+};
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test01_avl_rotations/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 3 accepted, 0 rejected
+LOAD incidents.txt: 0 accepted, 0 rejected
+> CITY_PREORDER
+JUNCTION PREORDER 20 10 30
+> CITY_LIST
+JUNCTIONS 3
+JUNCTION 10 South FIRE
+JUNCTION 20 Central HOSPITAL
+JUNCTION 30 North PLAIN
+> CITY_FIND 20
+JUNCTION 20 Central HOSPITAL
+> CITY_FIND 99
+ERROR line 4: junction 99 not found
+> CITY_ADD 20 Duplicate PLAIN
+ERROR line 5: duplicate junction ID
+> CITY_ADD 40 East POLICE
+JUNCTION ADDED 40
+> CITY_PREORDER
+JUNCTION PREORDER 20 10 30 40
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test01_avl_rotations/incidents.txt
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test01_avl_rotations/junctions.txt
+--------------------------------------------------------------------------------
+30|North|PLAIN
+20|Central|HOSPITAL
+10|South|FIRE
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test01_avl_rotations/script.txt
+--------------------------------------------------------------------------------
+CITY_PREORDER
+CITY_LIST
+CITY_FIND 20
+CITY_FIND 99
+CITY_ADD 20 Duplicate PLAIN
+CITY_ADD 40 East POLICE
+CITY_PREORDER
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test02_avl_balancing/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 0 accepted, 0 rejected
+LOAD incidents.txt: 0 accepted, 0 rejected
+> CITY_LIST
+JUNCTIONS 0
+> CITY_PREORDER
+JUNCTION PREORDER EMPTY
+> CITY_FIND 9
+ERROR line 3: junction 9 not found
+> CITY_ADD 30 North PLAIN
+JUNCTION ADDED 30
+> CITY_ADD 10 South PLAIN
+JUNCTION ADDED 10
+> CITY_ADD 20 Center HOSPITAL
+JUNCTION ADDED 20
+> CITY_PREORDER
+JUNCTION PREORDER 20 10 30
+> CITY_ADD 40 East FIRE
+JUNCTION ADDED 40
+> CITY_ADD 50 FarEast POLICE
+JUNCTION ADDED 50
+> CITY_ADD 35 West DEPOT
+JUNCTION ADDED 35
+> CITY_PREORDER
+JUNCTION PREORDER 30 20 10 40 35 50
+> CITY_LIST
+JUNCTIONS 6
+JUNCTION 10 South PLAIN
+JUNCTION 20 Center HOSPITAL
+JUNCTION 30 North PLAIN
+JUNCTION 35 West DEPOT
+JUNCTION 40 East FIRE
+JUNCTION 50 FarEast POLICE
+> CITY_ADD 30 Duplicate PLAIN
+ERROR line 13: duplicate junction ID
+> CITY_FIND 35
+JUNCTION 35 West DEPOT
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test02_avl_balancing/incidents.txt
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test02_avl_balancing/junctions.txt
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test02_avl_balancing/script.txt
+--------------------------------------------------------------------------------
+CITY_LIST
+CITY_PREORDER
+CITY_FIND 9
+CITY_ADD 30 North PLAIN
+CITY_ADD 10 South PLAIN
+CITY_ADD 20 Center HOSPITAL
+CITY_PREORDER
+CITY_ADD 40 East FIRE
+CITY_ADD 50 FarEast POLICE
+CITY_ADD 35 West DEPOT
+CITY_PREORDER
+CITY_LIST
+CITY_ADD 30 Duplicate PLAIN
+CITY_FIND 35
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test03_bst_deletion/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 8 accepted, 0 rejected
+> INC_PREORDER
+INCIDENT PREORDER 40 20 10 30 25 60 50 70
+> INC_CLOSE 10
+INCIDENT CLOSED 10
+> INC_CLOSE 30
+INCIDENT CLOSED 30
+> INC_CLOSE 40
+INCIDENT CLOSED 40
+> INC_PREORDER
+INCIDENT PREORDER 50 20 25 60 70
+> INC_LIST
+INCIDENTS 5
+INCIDENT 20 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 25 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 50 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 60 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+INCIDENT 70 junction=1 category=MEDICAL severity=2 time=100 status=REPORTED
+> INC_FIND 40
+ERROR line 7: incident 40 not found
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test03_bst_deletion/incidents.txt
+--------------------------------------------------------------------------------
+40|1|MEDICAL|2|100
+20|1|MEDICAL|2|100
+60|1|MEDICAL|2|100
+10|1|MEDICAL|2|100
+30|1|MEDICAL|2|100
+25|1|MEDICAL|2|100
+50|1|MEDICAL|2|100
+70|1|MEDICAL|2|100
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test03_bst_deletion/junctions.txt
+--------------------------------------------------------------------------------
+1|Central|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test03_bst_deletion/script.txt
+--------------------------------------------------------------------------------
+INC_PREORDER
+INC_CLOSE 10
+INC_CLOSE 30
+INC_CLOSE 40
+INC_PREORDER
+INC_LIST
+INC_FIND 40
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test04_bst_empty_root/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 0 accepted, 0 rejected
+> INC_LIST
+INCIDENTS 0
+> INC_PREORDER
+INCIDENT PREORDER EMPTY
+> INC_FIND 1
+ERROR line 3: incident 1 not found
+> INC_REPORT 40 1 MEDICAL 5 100
+INCIDENT REPORTED 40
+> INC_REPORT 20 1 FIRE 3 150
+INCIDENT REPORTED 20
+> INC_REPORT 60 1 CRIME 2 110
+INCIDENT REPORTED 60
+> INC_REPORT 50 1 FIRE 4 50
+INCIDENT REPORTED 50
+> INC_PREORDER
+INCIDENT PREORDER 40 20 60 50
+> INC_CLOSE 40
+INCIDENT CLOSED 40
+> INC_PREORDER
+INCIDENT PREORDER 50 20 60
+> INC_CLOSE 20
+INCIDENT CLOSED 20
+> INC_CLOSE 60
+INCIDENT CLOSED 60
+> INC_CLOSE 50
+INCIDENT CLOSED 50
+> INC_PREORDER
+INCIDENT PREORDER EMPTY
+> INC_LIST
+INCIDENTS 0
+> INC_REPORT 50 1 CRIME 2 0
+INCIDENT REPORTED 50
+> INC_FIND 50
+INCIDENT 50 junction=1 category=CRIME severity=2 time=0 status=REPORTED
+> INC_CLOSE 50
+INCIDENT CLOSED 50
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test04_bst_empty_root/incidents.txt
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test04_bst_empty_root/junctions.txt
+--------------------------------------------------------------------------------
+1|Central|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test04_bst_empty_root/script.txt
+--------------------------------------------------------------------------------
+INC_LIST
+INC_PREORDER
+INC_FIND 1
+INC_REPORT 40 1 MEDICAL 5 100
+INC_REPORT 20 1 FIRE 3 150
+INC_REPORT 60 1 CRIME 2 110
+INC_REPORT 50 1 FIRE 4 50
+INC_PREORDER
+INC_CLOSE 40
+INC_PREORDER
+INC_CLOSE 20
+INC_CLOSE 60
+INC_CLOSE 50
+INC_PREORDER
+INC_LIST
+INC_REPORT 50 1 CRIME 2 0
+INC_FIND 50
+INC_CLOSE 50
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test05_hash_collision/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 2 accepted, 0 rejected
+> HASH_STATS
+HASH capacity=11 size=2
+> INC_FIND 101
+INCIDENT 101 junction=1 category=MEDICAL severity=5 time=100 status=REPORTED
+> INC_CLOSE 101
+INCIDENT CLOSED 101
+> INC_FIND 112
+INCIDENT 112 junction=1 category=FIRE severity=3 time=110 status=REPORTED
+> INC_REPORT 101 1 CRIME 2 200
+INCIDENT REPORTED 101
+> INC_FIND 101
+INCIDENT 101 junction=1 category=CRIME severity=2 time=200 status=REPORTED
+> HASH_STATS
+HASH capacity=11 size=2
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test05_hash_collision/incidents.txt
+--------------------------------------------------------------------------------
+101|1|MEDICAL|5|100
+112|1|FIRE|3|110
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test05_hash_collision/junctions.txt
+--------------------------------------------------------------------------------
+1|Center|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test05_hash_collision/script.txt
+--------------------------------------------------------------------------------
+HASH_STATS
+INC_FIND 101
+INC_CLOSE 101
+INC_FIND 112
+INC_REPORT 101 1 CRIME 2 200
+INC_FIND 101
+HASH_STATS
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test06_hash_resize/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 0 accepted, 0 rejected
+> HASH_STATS
+HASH capacity=11 size=0
+> INC_REPORT 101 1 MEDICAL 1 0
+INCIDENT REPORTED 101
+> INC_REPORT 102 1 MEDICAL 1 0
+INCIDENT REPORTED 102
+> INC_REPORT 103 1 MEDICAL 1 0
+INCIDENT REPORTED 103
+> INC_REPORT 104 1 MEDICAL 1 0
+INCIDENT REPORTED 104
+> INC_REPORT 105 1 MEDICAL 1 0
+INCIDENT REPORTED 105
+> INC_REPORT 106 1 MEDICAL 1 0
+INCIDENT REPORTED 106
+> INC_REPORT 107 1 MEDICAL 1 0
+INCIDENT REPORTED 107
+> INC_REPORT 108 1 MEDICAL 1 0
+INCIDENT REPORTED 108
+> INC_REPORT 109 1 MEDICAL 1 0
+INCIDENT REPORTED 109
+> HASH_STATS
+HASH capacity=23 size=9
+> INC_FIND 101
+INCIDENT 101 junction=1 category=MEDICAL severity=1 time=0 status=REPORTED
+> INC_CLOSE 101
+INCIDENT CLOSED 101
+> INC_FIND 101
+ERROR line 14: incident 101 not found
+> INC_REPORT 101 1 MEDICAL 1 0
+INCIDENT REPORTED 101
+> INC_REPORT 101 1 MEDICAL 1 0
+ERROR line 16: duplicate incident ID
+> HASH_STATS
+HASH capacity=23 size=9
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test06_hash_resize/incidents.txt
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test06_hash_resize/junctions.txt
+--------------------------------------------------------------------------------
+1|Center|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test06_hash_resize/script.txt
+--------------------------------------------------------------------------------
+HASH_STATS
+INC_REPORT 101 1 MEDICAL 1 0
+INC_REPORT 102 1 MEDICAL 1 0
+INC_REPORT 103 1 MEDICAL 1 0
+INC_REPORT 104 1 MEDICAL 1 0
+INC_REPORT 105 1 MEDICAL 1 0
+INC_REPORT 106 1 MEDICAL 1 0
+INC_REPORT 107 1 MEDICAL 1 0
+INC_REPORT 108 1 MEDICAL 1 0
+INC_REPORT 109 1 MEDICAL 1 0
+HASH_STATS
+INC_FIND 101
+INC_CLOSE 101
+INC_FIND 101
+INC_REPORT 101 1 MEDICAL 1 0
+INC_REPORT 101 1 MEDICAL 1 0
+HASH_STATS
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test07_heap_priority/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 5 accepted, 0 rejected
+> PRIORITY_NEXT
+NO PENDING INCIDENTS
+> PRIORITY_SERVE
+NO PENDING INCIDENTS
+> REQUEST 201
+INCIDENT PENDING 201
+> REQUEST 204
+INCIDENT PENDING 204
+> REQUEST 203
+INCIDENT PENDING 203
+> REQUEST 202
+INCIDENT PENDING 202
+> REQUEST 202
+ERROR line 7: incident 202 is already PENDING
+> PRIORITY_NEXT
+INCIDENT 202 junction=1 category=FIRE severity=5 time=300 status=PENDING
+> PRIORITY_COUNT
+PENDING 4
+> INC_CLOSE 204
+INCIDENT CLOSED 204
+> PRIORITY_COUNT
+PENDING 3
+> PRIORITY_SERVE
+INCIDENT SERVED 202
+> PRIORITY_NEXT
+INCIDENT 203 junction=1 category=CRIME severity=5 time=300 status=PENDING
+> PRIORITY_SERVE
+INCIDENT SERVED 203
+> PRIORITY_SERVE
+INCIDENT SERVED 201
+> PRIORITY_SERVE
+NO PENDING INCIDENTS
+> PRIORITY_COUNT
+PENDING 0
+> INC_LIST
+INCIDENTS 1
+INCIDENT 205 junction=1 category=MEDICAL severity=2 time=50 status=REPORTED
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test07_heap_priority/incidents.txt
+--------------------------------------------------------------------------------
+201|1|MEDICAL|5|400
+202|1|FIRE|5|300
+203|1|CRIME|5|300
+204|1|FIRE|3|100
+205|1|MEDICAL|2|50
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test07_heap_priority/junctions.txt
+--------------------------------------------------------------------------------
+1|Central|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test07_heap_priority/script.txt
+--------------------------------------------------------------------------------
+PRIORITY_NEXT
+PRIORITY_SERVE
+REQUEST 201
+REQUEST 204
+REQUEST 203
+REQUEST 202
+REQUEST 202
+PRIORITY_NEXT
+PRIORITY_COUNT
+INC_CLOSE 204
+PRIORITY_COUNT
+PRIORITY_SERVE
+PRIORITY_NEXT
+PRIORITY_SERVE
+PRIORITY_SERVE
+PRIORITY_SERVE
+PRIORITY_COUNT
+INC_LIST
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test08_heap_edge_cases/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 5 accepted, 0 rejected
+> PRIORITY_NEXT
+NO PENDING INCIDENTS
+> PRIORITY_SERVE
+NO PENDING INCIDENTS
+> REQUEST 201
+INCIDENT PENDING 201
+> REQUEST 202
+INCIDENT PENDING 202
+> REQUEST 203
+INCIDENT PENDING 203
+> REQUEST 204
+INCIDENT PENDING 204
+> REQUEST 205
+INCIDENT PENDING 205
+> PRIORITY_COUNT
+PENDING 5
+> REQUEST 201
+ERROR line 9: incident 201 is already PENDING
+> PRIORITY_NEXT
+INCIDENT 203 junction=1 category=MEDICAL severity=5 time=400 status=PENDING
+> INC_CLOSE 204
+INCIDENT CLOSED 204
+> PRIORITY_COUNT
+PENDING 4
+> PRIORITY_SERVE
+INCIDENT SERVED 203
+> PRIORITY_NEXT
+INCIDENT 201 junction=1 category=MEDICAL severity=5 time=500 status=PENDING
+> PRIORITY_SERVE
+INCIDENT SERVED 201
+> PRIORITY_SERVE
+INCIDENT SERVED 202
+> PRIORITY_SERVE
+INCIDENT SERVED 205
+> PRIORITY_SERVE
+NO PENDING INCIDENTS
+> PRIORITY_COUNT
+PENDING 0
+> INC_LIST
+INCIDENTS 0
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test08_heap_edge_cases/incidents.txt
+--------------------------------------------------------------------------------
+201|1|MEDICAL|5|500
+202|1|MEDICAL|5|500
+203|1|MEDICAL|5|400
+204|1|CRIME|3|100
+205|1|FIRE|1|50
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test08_heap_edge_cases/junctions.txt
+--------------------------------------------------------------------------------
+1|Center|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test08_heap_edge_cases/script.txt
+--------------------------------------------------------------------------------
+PRIORITY_NEXT
+PRIORITY_SERVE
+REQUEST 201
+REQUEST 202
+REQUEST 203
+REQUEST 204
+REQUEST 205
+PRIORITY_COUNT
+REQUEST 201
+PRIORITY_NEXT
+INC_CLOSE 204
+PRIORITY_COUNT
+PRIORITY_SERVE
+PRIORITY_NEXT
+PRIORITY_SERVE
+PRIORITY_SERVE
+PRIORITY_SERVE
+PRIORITY_SERVE
+PRIORITY_COUNT
+INC_LIST
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test09_loader_validation/expected_output.txt
+--------------------------------------------------------------------------------
+ERROR junctions.txt:4: duplicate junction ID
+ERROR junctions.txt:5: invalid junction ID
+ERROR junctions.txt:6: empty name
+ERROR junctions.txt:7: invalid type
+ERROR junctions.txt:8: wrong field count
+ERROR junctions.txt:12: invalid junction ID
+ERROR junctions.txt:13: wrong field count
+ERROR junctions.txt:14: invalid junction ID
+LOAD junctions.txt: 5 accepted, 8 rejected
+ERROR incidents.txt:3: duplicate incident ID
+ERROR incidents.txt:4: invalid incident ID
+ERROR incidents.txt:5: invalid junction ID
+ERROR incidents.txt:6: invalid category
+ERROR incidents.txt:7: invalid severity
+ERROR incidents.txt:8: invalid timestamp
+ERROR incidents.txt:9: junction 9 not found
+ERROR incidents.txt:10: wrong field count
+ERROR incidents.txt:11: invalid timestamp
+LOAD incidents.txt: 4 accepted, 9 rejected
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test09_loader_validation/incidents.txt
+--------------------------------------------------------------------------------
+101|1|MEDICAL|5|100
+112|2|FIRE|3|200
+101|9|CRIME|2|300
+abc|1|CRIME|2|1
+113|oops|CRIME|2|1
+114|1|OTHER|2|1
+115|1|FIRE|6|1
+116|1|FIRE|1|bad
+117|9|FIRE|2|1
+118|1|FIRE|2
+119|1|FIRE|5|0000000000
+120|1|FIRE|05|0
+	
+121|1|CRIME|5|001
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test09_loader_validation/junctions.txt
+--------------------------------------------------------------------------------
+1|Central Square|PLAIN
+2|City Hospital|HOSPITAL
+3|FireHall|FIRE
+1|Duplicate|PLAIN
+abc|Broken|PLAIN
+4||PLAIN
+5|Unknown|LIBRARY
+6|Broken
+   
+7|Policy HQ|POLICE
+8|Depot|DEPOT
+0|Zero|PLAIN
+9|Spaced Name|PLAIN|extra
+0000000001|TooLong|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test09_loader_validation/script.txt
+--------------------------------------------------------------------------------
+# Loader validation test
+# Commands intentionally not required here
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test10_worked_example/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 3 accepted, 0 rejected
+ERROR incidents.txt:4: junction 9 not found
+LOAD incidents.txt: 3 accepted, 1 rejected
+> CITY_FIND 2
+JUNCTION 2 CityHospital HOSPITAL
+> CITY_PREORDER
+JUNCTION PREORDER 2 1 3
+> INC_FIND 101
+INCIDENT 101 junction=1 category=MEDICAL severity=5 time=1000 status=REPORTED
+> REQUEST 101
+INCIDENT PENDING 101
+> REQUEST 102
+INCIDENT PENDING 102
+> REQUEST 103
+INCIDENT PENDING 103
+> REQUEST 101
+ERROR line 8: incident 101 is already PENDING
+> PRIORITY_NEXT
+INCIDENT 103 junction=2 category=MEDICAL severity=5 time=900 status=PENDING
+> PRIORITY_COUNT
+PENDING 3
+> INC_CLOSE 103
+INCIDENT CLOSED 103
+> INC_FIND 103
+ERROR line 12: incident 103 not found
+> PRIORITY_NEXT
+INCIDENT 101 junction=1 category=MEDICAL severity=5 time=1000 status=PENDING
+> PRIORITY_SERVE
+INCIDENT SERVED 101
+> PRIORITY_COUNT
+PENDING 1
+> DISPATCH 5
+ERROR line 16: unknown command DISPATCH
+> INC_LIST
+INCIDENTS 1
+INCIDENT 102 junction=1 category=FIRE severity=3 time=1005 status=PENDING
+> HASH_STATS
+HASH capacity=11 size=1
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test10_worked_example/incidents.txt
+--------------------------------------------------------------------------------
+101|1|MEDICAL|5|1000
+102|1|FIRE|3|1005
+103|2|MEDICAL|5|900
+104|9|CRIME|2|50
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test10_worked_example/junctions.txt
+--------------------------------------------------------------------------------
+1|CentralSquare|PLAIN
+2|CityHospital|HOSPITAL
+3|NorthFireHall|FIRE
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test10_worked_example/script.txt
+--------------------------------------------------------------------------------
+# sample script
+CITY_FIND 2
+CITY_PREORDER
+INC_FIND 101
+REQUEST 101
+REQUEST 102
+REQUEST 103
+REQUEST 101
+PRIORITY_NEXT
+PRIORITY_COUNT
+INC_CLOSE 103
+INC_FIND 103
+PRIORITY_NEXT
+PRIORITY_SERVE
+PRIORITY_COUNT
+DISPATCH 5
+INC_LIST
+HASH_STATS
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test11_command_errors/expected_output.txt
+--------------------------------------------------------------------------------
+LOAD junctions.txt: 1 accepted, 0 rejected
+LOAD incidents.txt: 1 accepted, 0 rejected
+> BLAH 1
+ERROR line 1: unknown command BLAH
+> CITY_FIND
+ERROR line 2: wrong argument count
+> CITY_ADD xyz Good PLAIN
+ERROR line 3: invalid junction ID
+> CITY_ADD 2 Bad|Name PLAIN
+ERROR line 4: invalid name
+> CITY_ADD 2 Good BAD
+ERROR line 5: invalid type
+> CITY_ADD 1 Dup PLAIN
+ERROR line 6: duplicate junction ID
+> CIERROR line 7: junction 999 not found
+> INC_REPORT abc 1 MEDICAL 2 50
+ERROR line 8: invalid incident ID
+> INC_REPORT 102 xyz MEDICAL 2 50
+ERROR line 9: invalid junction ID
+> INC_REPORT 102 1 UNKNOWN 2 50
+ERROR line 10: invalid category
+> INC_REPORT 102 1 FIRE 7 50
+ERROR line 11: invalid severity
+> INC_REPORT 102 1 FIRE 2 bad
+ERROR line 12: invalid timestamp
+> INC_REPORT 101 9 FIRE 2 20
+ERROR line 13: duplicate incident ID
+> INC_REPORT 102 9 FIRE 2 20
+ERROR line 14: junction 9 not found
+> INC_FIND 999
+ERROR line 15: incident 999 not found
+> INC_CLOSE 999
+ERROR line 16: incident 999 not found
+> REQUEST 999
+ERROR line 17: incident 999 not found
+> REQUEST 101
+INCIDENT PENDING 101
+> REQUEST 101
+ERROR line 19: incident 101 is already PENDING
+> CITY_ADD 3 New DEPOT
+JUNCTION ADDED 3
+> CITY_FIND 3
+JUNCTION 3 New DEPOT
+> INC_REPORT 102 3 FIRE 4 30
+INCIDENT REPORTED 102
+> INC_FIND 102
+INCIDENT 102 junction=3 category=FIRE severity=4 time=30 status=REPORTED
+> INC_CLOSE 101
+INCIDENT CLOSED 101
+> INC_FIND 101
+ERROR line 25: incident 101 not found
+> INC_CLOSE 102
+INCIDENT CLOSED 102
+> HASH_STATS
+HASH capacity=11 size=0
+> PRIORITY_COUNT
+PENDING 0
+> PRIORITY_NEXT
+NO PENDING INCIDENTS
+> INC_PREORDER
+INCIDENT PREORDER EMPTY
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test11_command_errors/incidents.txt
+--------------------------------------------------------------------------------
+101|1|MEDICAL|3|100
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test11_command_errors/junctions.txt
+--------------------------------------------------------------------------------
+1|Central|PLAIN
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/test11_command_errors/script.txt
+--------------------------------------------------------------------------------
+BLAH 1
+CITY_FIND
+CITY_ADD xyz Good PLAIN
+CITY_ADD 2 Bad|Name PLAIN
+CITY_ADD 2 Good BAD
+CITY_ADD 1 Dup PLAIN
+CITY_FIND 999
+INC_REPORT abc 1 MEDICAL 2 50
+INC_REPORT 102 xyz MEDICAL 2 50
+INC_REPORT 102 1 UNKNOWN 2 50
+INC_REPORT 102 1 FIRE 7 50
+INC_REPORT 102 1 FIRE 2 bad
+INC_REPORT 101 9 FIRE 2 20
+INC_REPORT 102 9 FIRE 2 20
+INC_FIND 999
+INC_CLOSE 999
+REQUEST 999
+REQUEST 101
+REQUEST 101
+CITY_ADD 3 New DEPOT
+CITY_FIND 3
+INC_REPORT 102 3 FIRE 4 30
+INC_FIND 102
+INC_CLOSE 101
+INC_FIND 101
+INC_CLOSE 102
+HASH_STATS
+PRIORITY_COUNT
+PRIORITY_NEXT
+INC_PREORDER
+
+
+--------------------------------------------------------------------------------
+FILE: /tests/.gitkeep
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+FILE: /.gitignore
+--------------------------------------------------------------------------------
+/citygrid
+*.exe
+*.o
+*.obj
+
+
+--------------------------------------------------------------------------------
+FILE: /citygrid.exe
+--------------------------------------------------------------------------------
+[binary / skipped]
+
+--------------------------------------------------------------------------------
+FILE: /LICENSE
+--------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2026 Ali Abdullah
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+--------------------------------------------------------------------------------
+FILE: /README.md
+--------------------------------------------------------------------------------
+# TGS CityGrid - Assignment 4, Phase 1
+
+**Student:** TY_FIND 999
+**Roll number:** name, and type record. |
+**Course:** Data Structures (Fall 2026)
+**Language:** C++17
+
+## Build
+
+Run this exact build command from the project root:
+
+```bash
+g++ -std=c++17 -Wall -Icore -Iindex -Iengine engine/*.cpp -o citygrid
+```
+
+On Windows with MinGW, this produces `citygrid.exe`.
+
+## Run
+
+```text
+citygrid <junctions file> <incidents file> <script file>
+```
+
+Example on Windows: `citygrid.exe junctions.txt incidents.txt script.txt`.
+The program prints to standard output and does not read keyboard input.
+
+## Class responsibilities
+
+| Component | Responsibility |
+|---|---|
+| `core/Junction.h` | Junction ID,| `core/Incident.h` | Incident record, status, and priority comparator. |
+| `index/AVL.h` | Balanced junction dictionary with insertion, search, in-order and pre-order traversals; LL/RR/LR/RL rotations. |
+| `index/BST.h` | Unbalanced, ID-ordered incident registry, all three deletion cases, and memory ownership. |
+| `index/HashMap.h` | Fast incident-ID lookup with separate chaining and prime-capacity resizing. |
+| `index/MaxHeap.h` | Array-based emergency priority queue, peek, extract-max, remove-by-ID, and count. |
+| `engine/CityGrid.h/.cpp` | File loading, parsing, validation, coordination, exact output and diagnostics. |
+| `engine/CityGridCommands.cpp` | Interpret and execute all 14 commands while synchronizing structures. |
+| `engine/main.cpp` | Check three command-line filenames, execute, return error/success code. |
+
+## Hash collision strategy and resizing
+
+I use **separate chaining** with my own singly linked nodes per bucket. The required hash function is `incidentID % capacity`. Each chain node holds a key and `Incident*`. Insertion checks duplicates. Removal unlinks and deletes only the chain node, never the Incident. The table begins with capacity **11** and immediately resizes after insertion when `size / capacity > 0.75`. The replacement capacity is the smallest prime at least twice the old capacity (11, 23, 47, 97, ...). Every live entry is rehashed. The table never shrinks. Separate chaining does not require tombstones.
+
+## Emergency priority comparator
+
+The highest **severity** is served first (5 beats 4). For equal severities, the **earlier timestamp** wins (smaller number). If both match, the **smaller incident ID** wins. This total ordering is used by the max-heap.
+
+## Incident ownership and safe deletion
+
+`INC_REPORT` or incident-file loading allocates exactly one `Incident` with `new`. The BST stores and **owns** that `Incident*`; the HashMap and MaxHeap only borrow the same pointer. For `INC_CLOSE`, the engine removes the pending heap entry, if any, then removes the hash entry, then asks the BST to delete the record and its object. `PRIORITY_SERVE` first extracts from the heap, then removes the hash entry, then deletes through the BST. This order prevents dangling references. The BST destructor deletes remaining incidents; other structure destructors free their own nodes/arrays without deleting incidents.
+
+## Required time complexities
+
+Let `n` be the size of the relevant structure, and `h` the actual BST height.
+
+| Command | Required time |
+|---|---|
+| `CITY_ADD` | O(log n) AVL insertion |
+| `CITY_FIND` | O(log n) AVL lookup |
+| `CITY_LIST` | O(n) AVL in-order |
+| `CITY_PREORDER` | O(n) AVL pre-order |
+| `INC_REPORT` | O(h + log n) + O(1) average for BST, AVL, and hash |
+| `INC_FIND` | O(1) average hash lookup |
+| `INC_LIST` | O(n) BST in-order |
+| `INC_PREORDER` | O(n) BST pre-order |
+| `INC_CLOSE` | O(n) heap search + O(log n) heap repair + O(h) BST + O(1) average hash |
+| `REQUEST` | O(1) average hash lookup + O(log n) heap insertion |
+| `PRIORITY_NEXT` | O(1) heap peek |
+| `PRIORITY_SERVE` | O(log n) heap extraction + O(h) BST + O(1) average hash |
+| `PRIORITY_COUNT` | O(1) |
+| `HASH_STATS` | O(1) |
+
+Hash resizing takes O(n) when triggered. The BST is **not balanced**; inserting sorted incident IDs can produce a chain with `h = n`, so BST insertion, search and deletion can become O(n). The AVL guarantees O(log n) height. A collision chain may also be O(n) in a pathological hash-table case; average lookup is O(1).
+
+## Test coverage
+
+Each test folder contains `junctions.txt`, `incidents.txt`, `script.txt`, and `expected_output.txt`.
+
+| Test folder | Covered behavior |
+|---|---|
+| `test01_avl_rotations` | LL rotation, duplicate/missing junctions, sorted list. |
+| `test02_avl_balancing` | Empty junction file/tree, LR/RL and RR rebalancing, lists/preorders. |
+| `test03_bst_deletion` | Leaf, one-child, two-child and root deletion, successor pointer. |
+| `test04_bst_empty_root` | Empty incident file/tree, last record, root deletion, re-reporting. |
+| `test05_hash_collision` | Same-bucket IDs, lookup after collision deletion, re-reporting. |
+| `test06_hash_resize` | 11-to-23 resize on ninth insertion, duplicates and deletion. |
+| `test07_heap_priority` | Severity/timestamp/ID tie-breaks, duplicate requests, pending cancellation. |
+| `test08_heap_edge_cases` | Empty heap, equal-priority ties, non-top cancellation, draining. |
+| `test09_loader_validation` | All file rejection reasons, blank lines, Windows CRLF, physical line numbers. |
+| `test10_worked_example` | Exact official assignment example; synchronization and unknown command. |
+| `test11_command_errors` | Unknown/wrong-argument commands, all invalid-field diagnostics, state unchanged on failure, continuing after errors. |
+
+## Scope
+
+Phase 1 covers junctions, incidents, hash lookup and emergency priority. Road graph edges, routing, dispatch and network analysis are outside this assignment phase.
+
+
+================================================================================
+END OF FOLDER: TGS-City-Grid
+================================================================================

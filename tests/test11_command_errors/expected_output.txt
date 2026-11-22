@@ -12,7 +12,8 @@ ERROR line 4: invalid name
 ERROR line 5: invalid type
 > CITY_ADD 1 Dup PLAIN
 ERROR line 6: duplicate junction ID
-> CIERROR line 7: junction 999 not found
+> CITY_FIND 999
+ERROR line 7: junction 999 not found
 > INC_REPORT abc 1 MEDICAL 2 50
 ERROR line 8: invalid incident ID
 > INC_REPORT 102 xyz MEDICAL 2 50
